@@ -36,7 +36,7 @@
 <main class="workspace"><section class="archive" aria-labelledby="archive-title"><div class="list-heading"><h2 id="archive-title">咖啡豆档案</h2><span>按喝完日期排列</span></div><div id="empty" class="empty"><span class="empty-number" aria-hidden="true">No. 001</span><h3>下一袋，会留在这里。</h3><p>还没有记录喝完的咖啡豆。</p></div><div class="cards" id="cards"></div></section></main>
 <section class="timeline" aria-labelledby="timeline-title">
 <div class="timeline-head"><div><p class="eyebrow">EVERY BAG, A MILESTONE</p><h2 id="timeline-title">喝完的轨迹</h2><p>累计包装重量 · 相邻喝完日之间假设均匀消耗 · 单位 g</p></div><span id="timeline-total" class="timeline-total"></span></div>
-<div id="chart-scroll" class="chart-scroll"><svg id="timeline-chart" class="chart" viewBox="0 0 1000 240" preserveAspectRatio="none" role="group" aria-labelledby="chart-title chart-description"><title id="chart-title">累计喝完重量时间轴</title><desc id="chart-description">横轴为喝完日期，纵轴为累计包装重量。节点之间以斜线连接，假设相邻喝完日期之间每天均匀消耗。首袋开始日期未记录，不估算此前的消耗。每个节点代表当天喝完的袋子，可点击或按 Enter 查看。</desc></svg></div>
+<div id="chart-scroll" class="chart-scroll"><svg id="timeline-chart" class="chart" viewBox="0 0 1000 240" preserveAspectRatio="none" role="group" aria-labelledby="chart-title chart-description"><title id="chart-title">累计喝完重量时间轴</title><desc id="chart-description">横轴为喝完日期，纵轴为累计包装重量。节点之间以斜线连接，假设相邻喝完日期之间每天均匀消耗。从 2025-06-07、累计 0 g 开始。每个节点代表当天喝完的袋子，可点击或按 Enter 查看。</desc></svg></div>
 <p id="chart-empty" class="timeline-empty" hidden>还没有可统计的重量记录。</p>
 <p id="chart-hint" class="chart-hint">悬停、聚焦或点按节点，查看这一袋；点按后可跳到档案。</p>
 <div id="timeline-detail" class="timeline-detail" hidden><div class="detail-heading"><p id="node-summary" aria-live="polite"></p><button id="close-detail" class="close-detail" type="button">收起</button></div><ul id="node-bags" class="node-bags"></ul></div>
@@ -84,15 +84,16 @@ for(const r of chronological){
  if(!group||group.date!==r.finished){group={date:r.finished,bags:[],weight:0,cumulative};groups.push(group)}
  group.bags.push(r);group.weight+=r.weight||0;cumulative+=r.weight||0;group.cumulative=cumulative;
 }
-// Estimate each interval from the previous finish; the first start date is unknown.
+// Interpolate consumption from the specified zero-weight start date.
+const TIMELINE_START='2025-06-07';
 for(let i=0;i<groups.length;i++){
  const group=groups[i];
- group.days=i?(Date.parse(group.date+'T00:00:00Z')-Date.parse(groups[i-1].date+'T00:00:00Z'))/86400000:null;
+ group.days=(Date.parse(group.date+'T00:00:00Z')-Date.parse((i?groups[i-1].date:TIMELINE_START)+'T00:00:00Z'))/86400000;
  group.rate=group.days&&group.bags.every(r=>r.weight!==null)?group.weight/group.days:null;
 }
 const missing=records.filter(r=>r.weight===null).length;
 $('timeline-total').textContent=grams.toLocaleString('zh-CN')+' g';
-$('chart-hint').textContent='悬停、聚焦或点按节点，查看当天喝完的袋子；点按后可跳到档案。首袋开始日期未记录，不估算此前的消耗。'+(missing?' 有 '+missing+' 袋未记录重量，未计入累计值。':'');
+$('chart-hint').textContent='悬停、聚焦或点按节点，查看当天喝完的袋子；点按后可跳到档案。从 2025-06-07、累计 0 g 开始。'+(missing?' 有 '+missing+' 袋未记录重量，未计入累计值。':'');
 const svg=$('timeline-chart'),NS='http://www.w3.org/2000/svg';
 function svgEl(tag,attrs,text){const n=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;return n}
 const cardIndex=new Map(sorted.map((r,i)=>[r.id,i]));
@@ -117,7 +118,7 @@ function renderTimeline(){
  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
  const layer=svgEl('g',{});svg.append(layer);
  const day=86400000,time=date=>Date.parse(date+'T00:00:00Z');
- const first=time(groups[0].date),last=time(groups[groups.length-1].date),span=last-first;
+ const first=time(TIMELINE_START),last=time(groups[groups.length-1].date),span=last-first;
  const pad=Math.max(day,span*.04),start=first-pad,end=last+pad;
  const x=date=>left+(time(date)-start)/(end-start)*(width-left-right);
  const rough=Math.max(grams,1)/4,power=10**Math.floor(Math.log10(rough)),fraction=rough/power;
@@ -127,8 +128,8 @@ function renderTimeline(){
  const tickCount=width<400?2:width<700?3:5;
  const ticks=span===0?[first]:Array.from({length:tickCount},(_,i)=>first+span*i/(tickCount-1));
  for(const value of ticks){const date=new Date(value).toISOString().slice(0,10);layer.append(svgEl('text',{x:x(date),y:height-10,'text-anchor':'middle',class:'chart-label'},date.replaceAll('-','.')))}
- const firstX=x(groups[0].date),lastX=x(groups[groups.length-1].date);
- const path=groups.map((group,i)=>`${i?'L':'M'} ${x(group.date)} ${y(group.cumulative)}`).join(' ');
+ const firstX=x(TIMELINE_START),lastX=x(groups[groups.length-1].date);
+ const path=`M ${firstX} ${bottom} `+groups.map(group=>`L ${x(group.date)} ${y(group.cumulative)}`).join(' ');
  layer.append(svgEl('path',{d:path+` L ${lastX} ${bottom} L ${firstX} ${bottom} Z`,class:'chart-area'}),svgEl('path',{d:path,class:'chart-line'}));
  for(const group of groups){
  const cx=x(group.date),cy=y(group.cumulative),label=group.date+'，'+group.bags.length+' 袋，当天已记录 '+group.weight+' 克，累计 '+group.cumulative+' 克';
